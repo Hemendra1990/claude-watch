@@ -21,6 +21,10 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.1.3</b> — Reliable diff/highlight for changes to files you never opened
+        and after they're already saved: a built-in per-file content snapshot store
+        provides the "before" content; baselines are primed when you open a file.
+        Optional (off by default): fall back to IntelliJ Local History.<br/>
         <b>0.1.2</b> — Removed deprecated <code>ReadAction.compute</code> usages
         (clean against 2026.1); no behavior change.<br/>
         <b>0.1.1</b> — First public release: external-change detection that works
@@ -33,6 +37,7 @@
     <extensions defaultExtensionNs="com.intellij">
         <applicationService serviceImplementation="dev.hemendra.claudewatch.ClaudeWatchSettings"/>
         <projectService serviceImplementation="dev.hemendra.claudewatch.HistoryService"/>
+        <projectService serviceImplementation="dev.hemendra.claudewatch.SnapshotService"/>
         <projectService serviceImplementation="dev.hemendra.claudewatch.ClaudeWatchService"/>
 
         <postStartupActivity implementation="dev.hemendra.claudewatch.ClaudeWatchStartup"/>

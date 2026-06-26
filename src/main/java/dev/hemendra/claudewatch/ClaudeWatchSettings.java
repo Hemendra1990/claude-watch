@@ -23,6 +23,8 @@ public final class ClaudeWatchSettings implements PersistentStateComponent<Claud
     public int maxOpenPerBurst = 5;
     public volatile int diffSizeCapKb = 512;
     public volatile boolean paused = false;
+    /** Opt-in: fall back to IntelliJ Local History for the "before" content of files never seen by the plugin. */
+    public volatile boolean useLocalHistory = false;
 
     /** Newline/space separated ignore patterns: bare names match a path segment, {@code *.ext} matches suffix. */
     public volatile String ignorePatterns =

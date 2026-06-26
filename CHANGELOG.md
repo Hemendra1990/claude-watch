@@ -3,6 +3,23 @@
 All notable changes to Claude Watch are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.3] - 2026-06-26
+
+### Added
+- **Reliable "what changed" even after save / for files never opened.** A bounded
+  in-memory snapshot store (`SnapshotService`, ~16 MB LRU budget) keeps the last
+  known content per file and serves as the diff/highlight baseline. Baselines are
+  primed when you open a file, and refreshed after every detected change.
+- **Opt-in Local History fallback** (off by default; Tools ▸ Claude Watch). When a
+  file was never seen by the plugin, optionally pull the "before" content from
+  IntelliJ Local History. Accessed purely via reflection so the experimental
+  `com.intellij.history` API is never referenced at compile time (verifier stays clean).
+
+### Changed
+- Diff/`Show Diff` baseline is now resolved as: snapshot store → cached editor
+  Document → optional Local History. Previously highlighting was skipped for files
+  that weren't open at change time.
+
 ## [0.1.2] - 2026-06-26
 
 ### Changed

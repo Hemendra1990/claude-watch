@@ -20,6 +20,7 @@ public final class ClaudeWatchConfigurable implements Configurable {
     private JBCheckBox highlight;
     private JBCheckBox notify;
     private JBCheckBox paused;
+    private JBCheckBox useLocalHistory;
     private JBIntSpinner refreshMs;
     private JBIntSpinner burstMs;
     private JBIntSpinner fadeMs;
@@ -41,6 +42,7 @@ public final class ClaudeWatchConfigurable implements Configurable {
         highlight = new JBCheckBox("Highlight changed lines (fading)");
         notify = new JBCheckBox("Show notifications");
         paused = new JBCheckBox("Paused (record only, do not open)");
+        useLocalHistory = new JBCheckBox("Use IntelliJ Local History as a fallback baseline (for files never opened)");
         refreshMs = new JBIntSpinner(1500, 250, 60000);
         burstMs = new JBIntSpinner(400, 50, 10000);
         fadeMs = new JBIntSpinner(5000, 500, 60000);
@@ -57,6 +59,7 @@ public final class ClaudeWatchConfigurable implements Configurable {
                 .addComponent(highlight)
                 .addComponent(notify)
                 .addComponent(paused)
+                .addComponent(useLocalHistory)
                 .addLabeledComponent("Refresh interval (ms):", refreshMs)
                 .addLabeledComponent("Burst window (ms):", burstMs)
                 .addLabeledComponent("Highlight fade (ms):", fadeMs)
@@ -78,6 +81,7 @@ public final class ClaudeWatchConfigurable implements Configurable {
                 || highlight.isSelected() != s.highlight
                 || notify.isSelected() != s.notify
                 || paused.isSelected() != s.paused
+                || useLocalHistory.isSelected() != s.useLocalHistory
                 || refreshMs.getNumber() != s.refreshIntervalMs
                 || burstMs.getNumber() != s.burstWindowMs
                 || fadeMs.getNumber() != s.fadeMs
@@ -95,6 +99,7 @@ public final class ClaudeWatchConfigurable implements Configurable {
         s.highlight = highlight.isSelected();
         s.notify = notify.isSelected();
         s.paused = paused.isSelected();
+        s.useLocalHistory = useLocalHistory.isSelected();
         s.refreshIntervalMs = refreshMs.getNumber();
         s.burstWindowMs = burstMs.getNumber();
         s.fadeMs = fadeMs.getNumber();
@@ -112,6 +117,7 @@ public final class ClaudeWatchConfigurable implements Configurable {
         highlight.setSelected(s.highlight);
         notify.setSelected(s.notify);
         paused.setSelected(s.paused);
+        useLocalHistory.setSelected(s.useLocalHistory);
         refreshMs.setNumber(s.refreshIntervalMs);
         burstMs.setNumber(s.burstWindowMs);
         fadeMs.setNumber(s.fadeMs);

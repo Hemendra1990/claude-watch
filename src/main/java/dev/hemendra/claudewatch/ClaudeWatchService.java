@@ -7,6 +7,8 @@ import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
+import com.intellij.openapi.fileEditor.FileEditorManager;
+import com.intellij.openapi.fileEditor.FileEditorManagerListener;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
@@ -36,6 +38,7 @@ public final class ClaudeWatchService implements Disposable {
 
     private final Project project;
     private final EditorOpener opener;
+    private final SnapshotService snapshots;
     private final Alarm refreshAlarm;
     private final Alarm burstAlarm;
     private final List<Pending> buffer = new ArrayList<>(); // EDT-confined
@@ -44,6 +47,7 @@ public final class ClaudeWatchService implements Disposable {
     public ClaudeWatchService(@NotNull Project project) {
         this.project = project;
         this.opener = new EditorOpener(project, this);
+        this.snapshots = project.getService(SnapshotService.class);
         this.refreshAlarm = new Alarm(Alarm.ThreadToUse.POOLED_THREAD, this);
         this.burstAlarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD, this);
     }
@@ -51,6 +55,19 @@ public final class ClaudeWatchService implements Disposable {
     /** Called once from the startup activity. */
     void start() {
         VirtualFileManager.getInstance().addAsyncFileListener(new Listener(), this);
+        // Prime a baseline whenever a file is opened, so a later external edit highlights correctly first time.
+        project.getMessageBus().connect(this).subscribe(
+                FileEditorManagerListener.FILE_EDITOR_MANAGER,
+                new FileEditorManagerListener() {
+                    @Override
+                    public void fileOpened(@NotNull FileEditorManager source, @NotNull VirtualFile file) {
+                        if (file.isValid() && !file.isDirectory()
+                                && file.getLength() <= (long) settings().diffSizeCapKb * 1024) {
+                            Document doc = FileDocumentManager.getInstance().getDocument(file);
+                            if (doc != null) snapshots.put(file.getPath(), doc.getText());
+                        }
+                    }
+                });
         scheduleRefresh();
     }
 
@@ -146,20 +163,31 @@ public final class ClaudeWatchService implements Disposable {
         for (Pending p : batch) {
             if (disposed) return;
             VirtualFile file = p.file != null ? p.file : LocalFileSystem.getInstance().findFileByPath(p.path);
-            String oldText = p.oldText;
             String newText = p.type == ChangeRecord.Type.DELETE ? "" : readText(file, capKb);
 
-            // no-op refresh: only suppress MODIFY whose cached old content equals the new content.
-            // CREATE/DELETE always survive; unopened files have oldText == null and are never dropped.
-            if (p.type == ChangeRecord.Type.MODIFY && oldText != null && oldText.equals(newText)) continue;
+            // Resolve the "before" content: our snapshot store (durable, survives close/save)
+            // -> cached editor Document captured pre-change -> optional Local History fallback.
+            ClaudeWatchSettings s = settings();
+            String baseline = snapshots.get(p.path);
+            if (baseline == null) baseline = p.oldText;
+            if (baseline == null && s.useLocalHistory && file != null && p.type != ChangeRecord.Type.DELETE) {
+                long cutoff = System.currentTimeMillis() - Math.max(2000L, s.refreshIntervalMs * 2L);
+                baseline = LocalHistoryBaseline.before(project, file, cutoff);
+            }
+
+            // no-op refresh: only suppress MODIFY whose known old content equals the new content.
+            if (p.type == ChangeRecord.Type.MODIFY && baseline != null && baseline.equals(newText)) {
+                snapshots.put(p.path, newText); // keep baseline fresh even on a no-op
+                continue;
+            }
 
             int added = -1, removed = 0, firstLine = 0;   // -1 = change detected but not diffed
             List<Integer> changedLines = new ArrayList<>();
-            if (oldText != null && newText != null && p.type != ChangeRecord.Type.DELETE) {
+            if (baseline != null && newText != null && p.type != ChangeRecord.Type.DELETE) {
                 added = 0;
                 try {
                     List<LineFragment> frags = ComparisonManager.getInstance().compareLines(
-                            oldText, newText, ComparisonPolicy.DEFAULT, new EmptyProgressIndicator());
+                            baseline, newText, ComparisonPolicy.DEFAULT, new EmptyProgressIndicator());
                     boolean first = true;
                     for (LineFragment f : frags) {
                         added += (f.getEndLine2() - f.getStartLine2());
@@ -172,8 +200,12 @@ public final class ClaudeWatchService implements Disposable {
                 }
             }
 
+            // Update the baseline for next time.
+            if (p.type == ChangeRecord.Type.DELETE) snapshots.remove(p.path);
+            else if (newText != null) snapshots.put(p.path, newText);
+
             ChangeRecord record = new ChangeRecord(System.currentTimeMillis(), p.path, p.name,
-                    p.type, added, removed, firstLine, oldText);
+                    p.type, added, removed, firstLine, baseline);
             out.add(new Computed(record, changedLines, file));
         }
         if (!out.isEmpty()) {
