@@ -1,0 +1,15 @@
+Claude Watch
+Copyright 2026 Hemendra
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+DISCLAIMER OF AFFILIATION
+This plugin is an independent, community-built tool. It is NOT affiliated with,
+endorsed by, or sponsored by Anthropic. "Claude" and "Claude Code" are trademarks
+of Anthropic, PBC. The plugin reacts to external file changes from ANY source
+(AI agents such as Claude Code, other agents, CLIs, formatters, and git); the name
+reflects the primary use case, not an affiliation.

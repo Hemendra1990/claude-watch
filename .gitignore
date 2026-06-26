@@ -1,0 +1,14 @@
+.gradle/
+build/
+out/
+.idea/
+*.iml
+.DS_Store
+.intellijPlatform/
+
+# secrets — never commit
+signing/
+*.local
+gradle.properties.secret
+*.pem
+*.crt

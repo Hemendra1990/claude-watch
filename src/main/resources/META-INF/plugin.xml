@@ -1,0 +1,53 @@
+<idea-plugin>
+    <id>dev.hemendra.claudewatch</id>
+    <name>Claude Watch</name>
+    <vendor email="hemendra7011@gmail.com">Hemendra</vendor>
+
+    <description><![CDATA[
+        <p>A Cursor-like "the agent changed this file" experience for IntelliJ.
+        Watches your project on disk and detects changes made by an <b>external</b>
+        process — Claude Code, other AI agents, CLIs, or git — <b>even while
+        IntelliJ is in the background</b>. It then opens the changed file, jumps to
+        the first changed line, highlights the change with a fading marker, offers a
+        diff against the pre-change content, groups bursts of edits, and logs a
+        timeline. Includes a tool window, status-bar widget, pause mode, and settings.</p>
+        <p><b>Why it works in the background:</b> a built-in refresh driver syncs the
+        Virtual File System with disk on an interval, so external edits are seen
+        without needing to focus the IDE window (and on non-boot volumes where the
+        native file watcher is unreliable).</p>
+        <p><i>Disclaimer: not affiliated with, endorsed by, or sponsored by Anthropic.
+        "Claude" is a trademark of Anthropic, PBC. This is an independent,
+        community-built tool that reacts to external file changes from any source.</i></p>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <b>0.1.1</b> — First public release: external-change detection that works
+        while the IDE is backgrounded, open + jump + fading highlight, Show Diff,
+        burst grouping, timeline tool window, status-bar widget, pause mode, settings.
+    ]]></change-notes>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationService serviceImplementation="dev.hemendra.claudewatch.ClaudeWatchSettings"/>
+        <projectService serviceImplementation="dev.hemendra.claudewatch.HistoryService"/>
+        <projectService serviceImplementation="dev.hemendra.claudewatch.ClaudeWatchService"/>
+
+        <postStartupActivity implementation="dev.hemendra.claudewatch.ClaudeWatchStartup"/>
+
+        <toolWindow id="Claude Watch"
+                    anchor="bottom"
+                    icon="/icons/claudeWatch.svg"
+                    factoryClass="dev.hemendra.claudewatch.ClaudeWatchToolWindowFactory"/>
+
+        <statusBarWidgetFactory id="ClaudeWatch"
+                                implementation="dev.hemendra.claudewatch.ClaudeStatusBarWidgetFactory"/>
+
+        <applicationConfigurable parentId="tools"
+                                 id="dev.hemendra.claudewatch.settings"
+                                 displayName="Claude Watch"
+                                 instance="dev.hemendra.claudewatch.ClaudeWatchConfigurable"/>
+
+        <notificationGroup id="Claude Watch" displayType="BALLOON"/>
+    </extensions>
+</idea-plugin>
