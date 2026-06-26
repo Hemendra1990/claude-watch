@@ -21,6 +21,8 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.1.2</b> — Removed deprecated <code>ReadAction.compute</code> usages
+        (clean against 2026.1); no behavior change.<br/>
         <b>0.1.1</b> — First public release: external-change detection that works
         while the IDE is backgrounded, open + jump + fading highlight, Show Diff,
         burst grouping, timeline tool window, status-bar widget, pause mode, settings.

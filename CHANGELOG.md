@@ -3,6 +3,13 @@
 All notable changes to Claude Watch are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-06-26
+
+### Changed
+- Replaced the 3 deprecated `ReadAction.compute(ThrowableComputable)` calls with
+  `Application.runReadAction(Computable)` — clean against IntelliJ 2026.1, no
+  behavior change. (JetBrains Marketplace verifier flagged these as deprecated.)
+
 ## [0.1.1] - 2026-06-26
 
 First public release.

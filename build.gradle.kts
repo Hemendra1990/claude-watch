@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "dev.hemendra"
-version = "0.1.1"
+version = "0.1.2"
 
 repositories {
     mavenCentral()
@@ -18,6 +18,7 @@ dependencies {
         create("IC", "2024.2.5")
         instrumentationTools()
         zipSigner()
+        pluginVerifier()
     }
 }
 
@@ -41,8 +42,12 @@ intellijPlatform {
     signing {
         certificateChainFile = layout.projectDirectory.file("signing/chain.crt")
         privateKeyFile = layout.projectDirectory.file("signing/private.pem")
+        // Key is unencrypted (the forked signer JVM lacks providers to decrypt PKCS#8/PKCS#1
+        // encrypted keys). PRIVATE_KEY_PASSWORD is wired but only used if you supply an
+        // encrypted key on a JVM that supports it.
         password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
             .orElse(providers.gradleProperty("signing.password"))
+            .orElse("")
     }
 
     // Publishing: token from env PUBLISH_TOKEN or -Ppublish.token. `channels` default = stable.
@@ -54,7 +59,7 @@ intellijPlatform {
     // `verifyPlugin` runs the same JetBrains Plugin Verifier the Marketplace runs.
     pluginVerification {
         ides {
-            recommended()
+            ide("IC", "2024.2.5")
         }
     }
 }

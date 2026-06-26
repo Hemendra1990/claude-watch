@@ -5,12 +5,12 @@ import com.intellij.diff.comparison.ComparisonPolicy;
 import com.intellij.diff.fragments.LineFragment;
 import com.intellij.openapi.Disposable;
 import com.intellij.openapi.application.ApplicationManager;
-import com.intellij.openapi.application.ReadAction;
 import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.fileEditor.FileDocumentManager;
 import com.intellij.openapi.progress.EmptyProgressIndicator;
 import com.intellij.openapi.project.Project;
 import com.intellij.openapi.roots.ProjectRootManager;
+import com.intellij.openapi.util.Computable;
 import com.intellij.openapi.vfs.LocalFileSystem;
 import com.intellij.openapi.vfs.VfsUtil;
 import com.intellij.openapi.vfs.VirtualFile;
@@ -68,8 +68,8 @@ public final class ClaudeWatchService implements Disposable {
     private void refreshAndReschedule() {
         try {
             if (disposed || project.isDisposed()) return;
-            VirtualFile[] roots = ReadAction.compute(() ->
-                    project.isDisposed() ? new VirtualFile[0]
+            VirtualFile[] roots = ApplicationManager.getApplication().runReadAction(
+                    (Computable<VirtualFile[]>) () -> project.isDisposed() ? new VirtualFile[0]
                             : ProjectRootManager.getInstance(project).getContentRoots());
             if (roots.length > 0) {
                 VfsUtil.markDirtyAndRefresh(true, true, true, roots);
@@ -220,7 +220,7 @@ public final class ClaudeWatchService implements Disposable {
 
     /** Absolute paths of all content roots (plus base) for this project; empty if disposed. */
     private List<String> projectRootPaths() {
-        return ReadAction.compute(() -> {
+        return ApplicationManager.getApplication().runReadAction((Computable<List<String>>) () -> {
             if (project.isDisposed()) return List.<String>of();
             List<String> rs = new ArrayList<>();
             for (VirtualFile r : ProjectRootManager.getInstance(project).getContentRoots()) {
@@ -251,7 +251,7 @@ public final class ClaudeWatchService implements Disposable {
         Document doc = fdm.getCachedDocument(f);
         if (doc == null) return null;
         try {
-            return ReadAction.compute(doc::getText);
+            return ApplicationManager.getApplication().runReadAction((Computable<String>) doc::getText);
         } catch (Throwable t) {
             return null;
         }
