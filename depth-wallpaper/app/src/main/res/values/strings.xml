@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Depth Wallpaper</string>
+    <string name="wallpaper_description">Depth-effect live wallpaper — your subject pops in front of the clock.</string>
+
+    <string name="pick_photo">Choose photo</string>
+    <string name="change_photo">Change photo</string>
+    <string name="apply_wallpaper">Set as wallpaper</string>
+    <string name="processing_subject">Cutting out subject…</string>
+    <string name="processing_failed">Couldn\'t detect a subject. Try another photo.</string>
+    <string name="empty_hint">Pick a photo with a clear subject (a person, pet or object) to build your depth wallpaper.</string>
+
+    <string name="section_clock">Clock</string>
+    <string name="section_depth">Depth &amp; motion</string>
+    <string name="clock_color">Clock color</string>
+    <string name="show_date">Show date</string>
+    <string name="use_24h">24-hour time</string>
+    <string name="parallax_strength">Parallax strength</string>
+    <string name="depth_pop">Subject pop</string>
+</resources>

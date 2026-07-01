@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Stylised "layers popping out" glyph, centred in the adaptive-icon safe zone. -->
+    <path
+        android:fillColor="#4F7BFF"
+        android:pathData="M54,30 L78,44 L54,58 L30,44 Z" />
+    <path
+        android:fillColor="#7C4DFF"
+        android:pathData="M54,46 L78,60 L54,74 L30,60 Z"
+        android:fillAlpha="0.9" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,60 L70,69 L54,78 L38,69 Z"
+        android:fillAlpha="0.95" />
+</vector>
