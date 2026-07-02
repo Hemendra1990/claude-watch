@@ -30,13 +30,22 @@ public final class HistoryService {
     }
 
     public void add(@NotNull ChangeRecord record) {
+        addAll(List.of(record));
+    }
+
+    /** Batch insert with a single listener notification — bursts fire UI updates once, not per record. */
+    public void addAll(@NotNull List<ChangeRecord> newRecords) {
+        if (newRecords.isEmpty()) return;
         int cap = Math.max(1, ClaudeWatchSettings.getInstance().maxHistory);
-        records.add(0, record);
-        totalSeen++;
-        // drop retained content on the record that just aged out of the content window
-        if (records.size() > KEEP_CONTENT) {
-            ChangeRecord aged = records.get(KEEP_CONTENT);
-            if (aged.oldText() != null) records.set(KEEP_CONTENT, aged.withoutOldText());
+        for (ChangeRecord record : newRecords) {
+            records.add(0, record);
+            totalSeen++;
+        }
+        // drop retained content on records that just aged out of the content window
+        int limit = Math.min(records.size(), KEEP_CONTENT + newRecords.size());
+        for (int i = KEEP_CONTENT; i < limit; i++) {
+            ChangeRecord aged = records.get(i);
+            if (aged.oldText() != null) records.set(i, aged.withoutOldText());
         }
         while (records.size() > cap) {
             records.remove(records.size() - 1);

@@ -36,6 +36,12 @@ import java.util.List;
  */
 public final class ClaudeWatchService implements Disposable {
 
+    /** Every Nth tick does a full recursive markDirty scan (catches volumes the native
+     *  watcher misses); the other ticks only flush watcher-marked dirty files — cheap. */
+    private static final int DEEP_SCAN_EVERY_N_TICKS = 10;
+    /** Upper bound on highlight ranges kept per change; beyond this we still open + record. */
+    private static final int MAX_HIGHLIGHT_RANGES = 500;
+
     private final Project project;
     private final EditorOpener opener;
     private final SnapshotService snapshots;
@@ -43,6 +49,11 @@ public final class ClaudeWatchService implements Disposable {
     private final Alarm burstAlarm;
     private final List<Pending> buffer = new ArrayList<>(); // EDT-confined
     private volatile boolean disposed = false;
+
+    // Caches for the prepareChange hot path (it sees every VFS event batch IDE-wide).
+    private volatile List<String> cachedRoots = List.of();   // refreshed once per tick
+    private volatile MatcherCache matcherCache;              // rebuilt only when patterns change
+    private int ticksSinceDeepScan = 0;                      // pooled refresh thread only
 
     public ClaudeWatchService(@NotNull Project project) {
         this.project = project;
@@ -54,6 +65,7 @@ public final class ClaudeWatchService implements Disposable {
 
     /** Called once from the startup activity. */
     void start() {
+        cachedRoots = projectRootPaths();
         VirtualFileManager.getInstance().addAsyncFileListener(new Listener(), this);
         // Prime a baseline whenever a file is opened, so a later external edit highlights correctly first time.
         project.getMessageBus().connect(this).subscribe(
@@ -85,11 +97,20 @@ public final class ClaudeWatchService implements Disposable {
     private void refreshAndReschedule() {
         try {
             if (disposed || project.isDisposed()) return;
-            VirtualFile[] roots = ApplicationManager.getApplication().runReadAction(
-                    (Computable<VirtualFile[]>) () -> project.isDisposed() ? new VirtualFile[0]
-                            : ProjectRootManager.getInstance(project).getContentRoots());
-            if (roots.length > 0) {
-                VfsUtil.markDirtyAndRefresh(true, true, true, roots);
+            cachedRoots = projectRootPaths();
+            if (++ticksSinceDeepScan >= DEEP_SCAN_EVERY_N_TICKS) {
+                ticksSinceDeepScan = 0;
+                VirtualFile[] roots = ApplicationManager.getApplication().runReadAction(
+                        (Computable<VirtualFile[]>) () -> project.isDisposed() ? new VirtualFile[0]
+                                : ProjectRootManager.getInstance(project).getContentRoots());
+                if (roots.length > 0) {
+                    VfsUtil.markDirtyAndRefresh(true, true, true, roots);
+                }
+            } else {
+                // Cheap tick: only process files the native watcher already marked dirty.
+                // This is what actually beats the focus-only refresh; the deep scan above
+                // is a periodic safety net for roots the watcher can't cover.
+                VirtualFileManager.getInstance().asyncRefresh(null);
             }
         } catch (Throwable ignored) {
             // never let the heartbeat die
@@ -103,17 +124,24 @@ public final class ClaudeWatchService implements Disposable {
     private final class Listener implements AsyncFileListener {
         @Override
         public @Nullable ChangeApplier prepareChange(@NotNull List<? extends VFileEvent> events) {
-            List<String> roots = projectRootPaths();   // all content roots (+ base)
+            // Hot path: called for every VFS event batch IDE-wide. Bail before any real work
+            // when the batch contains no refresh-originated (external) events at all.
+            boolean anyExternal = false;
+            for (VFileEvent e : events) {
+                if (e.isFromRefresh()) { anyExternal = true; break; }
+            }
+            if (!anyExternal) return null;
+
+            List<String> roots = cachedRoots;          // all content roots (+ base), tick-refreshed
             if (roots.isEmpty()) return null;
-            ClaudeWatchSettings s = settings();
-            IgnoreMatcher matcher = new IgnoreMatcher(s.ignorePatterns);
+            IgnoreMatcher matcher = matcher(settings().ignorePatterns);
             FileDocumentManager fdm = FileDocumentManager.getInstance();
+            int capKb = settings().diffSizeCapKb;
 
             List<Pending> pending = new ArrayList<>();
             for (VFileEvent e : events) {
                 if (!e.isFromRefresh()) continue;          // external changes only
                 String path = e.getPath();
-                if (path == null) continue;
                 String root = matchRoot(roots, path);
                 if (root == null) continue;                // outside this project's content
                 if (matcher.isIgnored(path.substring(root.length()))) continue;  // project-relative match
@@ -122,7 +150,7 @@ public final class ClaudeWatchService implements Disposable {
                     VirtualFile f = ce.getFile();
                     if (f.isDirectory()) continue;
                     pending.add(new Pending(path, f.getName(), ChangeRecord.Type.MODIFY,
-                            cachedOldText(fdm, f, s.diffSizeCapKb), f));
+                            cachedOldText(fdm, f, capKb), f));
                 } else if (e instanceof VFileCreateEvent createEvent) {
                     if (createEvent.isDirectory()) continue;
                     pending.add(new Pending(path, nameOf(path), ChangeRecord.Type.CREATE, "", null));
@@ -130,7 +158,7 @@ public final class ClaudeWatchService implements Disposable {
                     VirtualFile f = de.getFile();
                     if (f.isDirectory()) continue;
                     pending.add(new Pending(path, f.getName(), ChangeRecord.Type.DELETE,
-                            cachedOldText(fdm, f, s.diffSizeCapKb), null));
+                            cachedOldText(fdm, f, capKb), null));
                 }
             }
             if (pending.isEmpty()) return null;
@@ -158,7 +186,8 @@ public final class ClaudeWatchService implements Disposable {
     }
 
     private void compute(List<Pending> batch) {    // pooled thread
-        int capKb = settings().diffSizeCapKb;
+        ClaudeWatchSettings s = settings();
+        int capKb = s.diffSizeCapKb;
         List<Computed> out = new ArrayList<>();
         for (Pending p : batch) {
             if (disposed) return;
@@ -167,7 +196,6 @@ public final class ClaudeWatchService implements Disposable {
 
             // Resolve the "before" content: our snapshot store (durable, survives close/save)
             // -> cached editor Document captured pre-change -> optional Local History fallback.
-            ClaudeWatchSettings s = settings();
             String baseline = snapshots.get(p.path);
             if (baseline == null) baseline = p.oldText;
             if (baseline == null && s.useLocalHistory && file != null && p.type != ChangeRecord.Type.DELETE) {
@@ -182,7 +210,7 @@ public final class ClaudeWatchService implements Disposable {
             }
 
             int added = -1, removed = 0, firstLine = 0;   // -1 = change detected but not diffed
-            List<Integer> changedLines = new ArrayList<>();
+            List<int[]> changedRanges = new ArrayList<>(); // [startLine, endLine) on the new side
             if (baseline != null && newText != null && p.type != ChangeRecord.Type.DELETE) {
                 added = 0;
                 try {
@@ -192,7 +220,9 @@ public final class ClaudeWatchService implements Disposable {
                     for (LineFragment f : frags) {
                         added += (f.getEndLine2() - f.getStartLine2());
                         removed += (f.getEndLine1() - f.getStartLine1());
-                        for (int l = f.getStartLine2(); l < f.getEndLine2(); l++) changedLines.add(l);
+                        if (f.getEndLine2() > f.getStartLine2() && changedRanges.size() < MAX_HIGHLIGHT_RANGES) {
+                            changedRanges.add(new int[]{f.getStartLine2(), f.getEndLine2()});
+                        }
                         if (first) { firstLine = f.getStartLine2(); first = false; }
                     }
                 } catch (Throwable ignored) {
@@ -206,7 +236,7 @@ public final class ClaudeWatchService implements Disposable {
 
             ChangeRecord record = new ChangeRecord(System.currentTimeMillis(), p.path, p.name,
                     p.type, added, removed, firstLine, baseline);
-            out.add(new Computed(record, changedLines, file));
+            out.add(new Computed(record, changedRanges, file));
         }
         if (!out.isEmpty()) {
             ApplicationManager.getApplication().invokeLater(() -> dispatch(out), project.getDisposed());
@@ -222,9 +252,9 @@ public final class ClaudeWatchService implements Disposable {
 
         List<ChangeRecord> records = new ArrayList<>(computed.size());
         for (Computed c : computed) {
-            history.add(c.record);                 // always record, even when paused
             records.add(c.record);
         }
+        history.addAll(records);                   // always record, even when paused; single fire
 
         if (s.paused) return;                      // muted: no open, no balloon
 
@@ -239,7 +269,7 @@ public final class ClaudeWatchService implements Disposable {
             for (int i = 0; i < n; i++) {
                 Computed c = openable.get(i);
                 boolean focus = s.stealFocus && (i == n - 1);  // focus only the last to avoid thrash
-                opener.open(c.file, c.record, c.changedLines, focus);
+                opener.open(c.file, c.record, c.changedRanges, focus);
             }
         }
 
@@ -262,6 +292,16 @@ public final class ClaudeWatchService implements Disposable {
             if (bp != null && !rs.contains(bp)) rs.add(bp);
             return rs;
         });
+    }
+
+    /** Reuse the parsed IgnoreMatcher until the pattern string actually changes. */
+    private IgnoreMatcher matcher(String patterns) {
+        MatcherCache c = matcherCache;
+        if (c == null || !c.patterns.equals(patterns)) {
+            c = new MatcherCache(patterns, new IgnoreMatcher(patterns));
+            matcherCache = c;
+        }
+        return c.matcher;
     }
 
     private static @Nullable String matchRoot(List<String> roots, String path) {
@@ -315,6 +355,9 @@ public final class ClaudeWatchService implements Disposable {
                            @Nullable String oldText, @Nullable VirtualFile file) {
     }
 
-    private record Computed(ChangeRecord record, List<Integer> changedLines, @Nullable VirtualFile file) {
+    private record Computed(ChangeRecord record, List<int[]> changedRanges, @Nullable VirtualFile file) {
+    }
+
+    private record MatcherCache(String patterns, IgnoreMatcher matcher) {
     }
 }

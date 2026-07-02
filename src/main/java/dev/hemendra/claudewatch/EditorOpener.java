@@ -1,8 +1,10 @@
 package dev.hemendra.claudewatch;
 
 import com.intellij.openapi.Disposable;
+import com.intellij.openapi.editor.Document;
 import com.intellij.openapi.editor.Editor;
 import com.intellij.openapi.editor.markup.HighlighterLayer;
+import com.intellij.openapi.editor.markup.HighlighterTargetArea;
 import com.intellij.openapi.editor.markup.MarkupModel;
 import com.intellij.openapi.editor.markup.RangeHighlighter;
 import com.intellij.openapi.editor.markup.TextAttributes;
@@ -35,9 +37,9 @@ final class EditorOpener {
         this.parent = parent;
     }
 
-    /** @param changedLines 0-based line numbers on the new side; empty -> just open + jump. */
+    /** @param changedRanges 0-based [startLine, endLine) ranges on the new side; empty -> just open + jump. */
     void open(@NotNull VirtualFile file, @NotNull ChangeRecord record,
-              @NotNull List<Integer> changedLines, boolean focus) {
+              @NotNull List<int[]> changedRanges, boolean focus) {
         if (project.isDisposed() || !file.isValid()) return;
 
         int line = Math.max(0, record.firstChangedLine());
@@ -46,29 +48,22 @@ final class EditorOpener {
         if (editor == null) return;
 
         ClaudeWatchSettings settings = ClaudeWatchSettings.getInstance();
-        if (!settings.highlight || changedLines.isEmpty()) return;
+        if (!settings.highlight || changedRanges.isEmpty()) return;
 
         Color base = record.type() == ChangeRecord.Type.CREATE ? ADD_COLOR : MOD_COLOR;
         Color bg = editor.getColorsScheme().getDefaultBackground();
-        int lineCount = editor.getDocument().getLineCount();
 
-        List<Integer> valid = new ArrayList<>();
-        for (int l : changedLines) {
-            if (l >= 0 && l < lineCount) valid.add(l);
-        }
-        if (valid.isEmpty()) return;
-
-        startFade(editor, valid, base, bg, Math.max(500, settings.fadeMs));
+        startFade(editor, changedRanges, base, bg, Math.max(500, settings.fadeMs));
     }
 
-    private void startFade(Editor editor, List<Integer> lines, Color base, Color bg, int fadeMs) {
+    private void startFade(Editor editor, List<int[]> ranges, Color base, Color bg, int fadeMs) {
         MarkupModel markup = editor.getMarkupModel();
         Alarm alarm = new Alarm(Alarm.ThreadToUse.SWING_THREAD, parent);
         int stepDelay = Math.max(40, fadeMs / FADE_STEPS);
-        fadeStep(markup, lines, base, bg, alarm, stepDelay, 0, new ArrayList<>());
+        fadeStep(markup, ranges, base, bg, alarm, stepDelay, 0, new ArrayList<>());
     }
 
-    private void fadeStep(MarkupModel markup, List<Integer> lines, Color base, Color bg,
+    private void fadeStep(MarkupModel markup, List<int[]> ranges, Color base, Color bg,
                           Alarm alarm, int stepDelay, int step, List<RangeHighlighter> current) {
         try {
             for (RangeHighlighter h : current) {
@@ -84,14 +79,19 @@ final class EditorOpener {
             TextAttributes attrs = new TextAttributes();
             attrs.setBackgroundColor(blended);
 
-            int lineCount = markup.getDocument().getLineCount();
-            List<RangeHighlighter> next = new ArrayList<>(lines.size());
-            for (int line : lines) {
-                if (line < 0 || line >= lineCount) continue;
-                next.add(markup.addLineHighlighter(line, HighlighterLayer.SELECTION - 1, attrs));
+            Document doc = markup.getDocument();
+            int lineCount = doc.getLineCount();
+            List<RangeHighlighter> next = new ArrayList<>(ranges.size());
+            for (int[] r : ranges) {                       // one highlighter per contiguous run
+                int startLine = r[0];
+                int endLine = Math.min(r[1], lineCount) - 1;  // inclusive last line
+                if (startLine < 0 || startLine >= lineCount || endLine < startLine) continue;
+                next.add(markup.addRangeHighlighter(
+                        doc.getLineStartOffset(startLine), doc.getLineEndOffset(endLine),
+                        HighlighterLayer.SELECTION - 1, attrs, HighlighterTargetArea.LINES_IN_RANGE));
             }
             alarm.addRequest(
-                    () -> fadeStep(markup, lines, base, bg, alarm, stepDelay, step + 1, next),
+                    () -> fadeStep(markup, ranges, base, bg, alarm, stepDelay, step + 1, next),
                     stepDelay);
         } catch (RuntimeException ignored) {
             // editor/document gone mid-fade; nothing to clean up beyond the removals above

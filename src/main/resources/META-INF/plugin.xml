@@ -21,6 +21,11 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <b>0.1.4</b> — Large performance improvements: the interval refresh now only
+        processes files the native file watcher marked dirty (a full recursive disk
+        scan runs only as a periodic safety net), VFS event filtering is cheaper,
+        UI updates fire once per burst instead of once per file, and line highlights
+        use one marker per changed block instead of one per line.<br/>
         <b>0.1.3</b> — Reliable diff/highlight for changes to files you never opened
         and after they're already saved: a built-in per-file content snapshot store
         provides the "before" content; baselines are primed when you open a file.
